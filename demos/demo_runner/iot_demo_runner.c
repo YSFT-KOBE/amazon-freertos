@@ -43,6 +43,9 @@
 #include "aws_demo.h"
 #include "aws_demo_config.h"
 
+#include "driver/gpio.h"
+#include "hal/gpio_types.h"
+
 /* Forward declaration of demo entry function to be renamed from #define in
  * aws_demo_config.h */
 int DEMO_entryFUNCTION( bool awsIotMqttMode,
@@ -72,6 +75,8 @@ int DEMO_entryFUNCTION( bool awsIotMqttMode,
     #define DEMO_networkDisconnectedCallback    ( NULL )
 #endif
 
+void TaskMainChimeGPIO(void* pParam);
+
 /*-----------------------------------------------------------*/
 
 /**
@@ -89,8 +94,37 @@ void DEMO_RUNNER_RunDemos( void )
         .networkDisconnectedCallback = DEMO_networkDisconnectedCallback
     };
 
+    gpio_config_t gpioP2Config ={
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_INPUT,
+        .pin_bit_mask = 0x0000000000000004,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE
+    };
+    gpio_config_t gpioP0Config ={
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_DEF_OUTPUT,
+        .pin_bit_mask = 0x0000000000000001,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE
+    };
+    gpio_config(&gpioP0Config);
+    gpio_config(&gpioP2Config);
+
     Iot_CreateDetachedThread( runDemoTask,
                               &mqttDemoContext,
                               democonfigDEMO_PRIORITY,
                               democonfigDEMO_STACKSIZE );
+
+    BaseType_t xReturned;
+    TaskHandle_t xHandle = NULL;
+
+    /* Create the task, storing the handle. */
+    xReturned = xTaskCreate(
+                    TaskMainChimeGPIO, /* Function that implements the task. */
+                    "NAME",            /* Text name for the task. */
+                    democonfigDEMO_STACKSIZE,        /* Stack size in words, not bytes. */
+                    ( void * ) 1,      /* Parameter passed into the task. */
+                    democonfigDEMO_PRIORITY,  /* Priority at which the task is created. */
+                    &xHandle );        /* Used to pass out the created task's handle. */
 }
