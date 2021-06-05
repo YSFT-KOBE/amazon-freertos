@@ -290,11 +290,14 @@ static BaseType_t xUpdateAcceptedReturn = pdPASS;
 static BaseType_t xDeleteResponseReceived = pdFALSE;
 
 static QueueHandle_t xTaskQueueHandle = NULL;
-struct TaskQueueData {
+typedef struct  {
     uint8_t queueMessageID;
     uint8_t queueMessageData[3];
-};
-
+} TaskQueueData_t;
+typedef enum {
+    TaskQueueMesID_GPIO_ON = 1,
+    TaskQueueMesID_ShadowUpdate= 2
+} TaskQueueMesID_t;
 /**
  * @brief Status of the Shadow delete operation.
  *
@@ -476,6 +479,7 @@ static void prvUpdateDeltaHandler( MQTTPublishInfo_t * pxPublishInfo )
     char * pcOutValue = NULL;
     uint32_t ulOutValueLength = 0U;
     JSONStatus_t result = JSONSuccess;
+    char pcUpdateReportedDocument[ SHADOW_REPORTED_JSON_LENGTH + 1 ] = { 0 };
 
     assert( pxPublishInfo != NULL );
     assert( pxPublishInfo->pPayload != NULL );
@@ -571,7 +575,35 @@ static void prvUpdateDeltaHandler( MQTTPublishInfo_t * pxPublishInfo )
             /* The received powerOn state is different from the one we retained before, so we switch them
              * and set the flag. */
             ulCurrentPowerOnState = ulNewState;
+#if 0
+            /* Report the latest power state back to device shadow. */
+            LogInfo( ( "Report to the state change: %d", ulCurrentPowerOnState ) );
+            ( void ) memset( pcUpdateReportedDocument,
+                             0x00,
+                             sizeof( pcUpdateReportedDocument ) );
 
+            /* Keep the client token in global variable used to compare if
+             * the same token in /update/accepted. */
+            ulClientToken = ( xTaskGetTickCount() % 1000000 );
+            snprintf( pcUpdateReportedDocument,
+                      SHADOW_REPORTED_JSON_LENGTH + 1,
+                      SHADOW_REPORTED_JSON,
+                      ( int ) 0,
+                      ( long unsigned ) ulClientToken );
+            LogInfo( ( "Calling PublishToTopic: SHADOW_TOPIC_STRING_UPDATE  %s", pcUpdateReportedDocument ) );
+            PublishToTopic( &xMqttContext,
+                                          SHADOW_TOPIC_STRING_UPDATE( THING_NAME ),
+                                          SHADOW_TOPIC_LENGTH_UPDATE( THING_NAME_LENGTH ),
+                                          pcUpdateReportedDocument,
+                                          ( SHADOW_DESIRED_JSON_LENGTH + 1 ) );
+#else
+            TaskQueueData_t data;
+
+            data.queueMessageID = (uint8_t)TaskQueueMesID_ShadowUpdate;
+            data.queueMessageData[0]= (uint8_t)ulNewState;
+            xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+
+#endif
             /* State change will be handled in main(), where we will publish a "reported"
              * state to the device shadow. We do not do it here because we are inside of
              * a callback from the MQTT library, so that we don't re-enter
@@ -697,6 +729,8 @@ static void prvEventCallback( MQTTContext_t * pxMqttContext,
 
     usPacketIdentifier = pxDeserializedInfo->packetIdentifier;
 
+    LogInfo( ( "Called prvEventCallback") );
+
     /* Handle incoming publish. The lower 4 bits of the publish packet
      * type is used for the dup, QoS, and retain flags. Hence masking
      * out the lower bits to check if the packet is publish. */
@@ -759,13 +793,13 @@ static void prvEventCallback( MQTTContext_t * pxMqttContext,
     }
 }
 
-struct TaskQueueData data;
 
 void TaskMainChimeGPIO(void* pParam){
     LogInfo( ( "Calling TaskMainChimeGPIO" ) );
-    const TickType_t xDelay = 1000 / portTICK_PERIOD_MS;
+    const TickType_t xDelay = 10000 / portTICK_PERIOD_MS;
+    TaskQueueData_t data;
 
-    data.queueMessageID = 0;
+    data.queueMessageID = (uint8_t)TaskQueueMesID_GPIO_ON;
 
     for( ;; )
     {
@@ -804,13 +838,12 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
                          const void * pNetworkInterface )
 {
     BaseType_t xDemoStatus = pdPASS;
-    BaseType_t xDemoRunCount = 0UL;
-    BaseType_t xDeleteResponseLoopCount = 0UL;
     BaseType_t xTaskQueueRecieve = pdTRUE;
 
     /* A buffer containing the update document. It has static duration to prevent
      * it from being placed on the call stack. */
-    static char pcUpdateDocument[ SHADOW_REPORTED_JSON_LENGTH + 1 ] = { 0 };
+    static char pcUpdateReportedDocument[ SHADOW_REPORTED_JSON_LENGTH + 1 ] = { 0 };
+
 
     /* Remove compiler warnings about unused parameters. */
     ( void ) awsIotMqttMode;
@@ -820,7 +853,7 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
     ( void ) pNetworkInterface;
 
     /* Create Task Queue */
-    xTaskQueueHandle = xQueueCreate( 10, sizeof(struct TaskQueueData));
+    xTaskQueueHandle = xQueueCreate( 10, sizeof(TaskQueueData_t));
 
     LogInfo( ( "Calling EstablishMqttSession" ) );
     xDemoStatus = EstablishMqttSession( &xMqttContext,
@@ -836,7 +869,7 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
         /* Then try to subscribe Shadow delta and Shadow updated topics. */
         if( xDemoStatus == pdPASS )
         {
-            LogInfo( ( "Calling SubscribeToTopic: SHADOW_TOPIC_STRING_UPDATE_DELTA" ) );
+            LogInfo( ( "Calling SubscribeToTopic: SHADOW_TOPIC_STRING_UPDATE_DELTA(%s)", THING_NAME ) );
             xDemoStatus = SubscribeToTopic( &xMqttContext,
                                             SHADOW_TOPIC_STRING_UPDATE_DELTA( THING_NAME ),
                                             SHADOW_TOPIC_LENGTH_UPDATE_DELTA( THING_NAME_LENGTH ) );
@@ -844,7 +877,7 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
 
         if( xDemoStatus == pdPASS )
         {
-            LogInfo( ( "Calling SubscribeToTopic: SHADOW_TOPIC_STRING_UPDATE_ACCEPTED" ) );
+            LogInfo( ( "Calling SubscribeToTopic: SHADOW_TOPIC_STRING_UPDATE_ACCEPTED(%s)", THING_NAME ) );
             xDemoStatus = SubscribeToTopic( &xMqttContext,
                                             SHADOW_TOPIC_STRING_UPDATE_ACCEPTED( THING_NAME ),
                                             SHADOW_TOPIC_LENGTH_UPDATE_ACCEPTED( THING_NAME_LENGTH ) );
@@ -852,28 +885,78 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
 
         if( xDemoStatus == pdPASS )
         {
-            LogInfo( ( "Calling SubscribeToTopic: SHADOW_TOPIC_STRING_UPDATE_REJECTED" ) );
+            LogInfo( ( "Calling SubscribeToTopic: SHADOW_TOPIC_STRING_UPDATE_REJECTED(%s)", THING_NAME ) );
             xDemoStatus = SubscribeToTopic( &xMqttContext,
                                             SHADOW_TOPIC_STRING_UPDATE_REJECTED( THING_NAME ),
                                             SHADOW_TOPIC_LENGTH_UPDATE_REJECTED( THING_NAME_LENGTH ) );
         }
     }
 
+    /* Report the latest power state back to device shadow. */
+    LogInfo( ("Report to the state change: 0") );
+    ( void ) memset( pcUpdateReportedDocument,
+                     0x00,
+                     sizeof( pcUpdateReportedDocument ) );
+
+    /* Keep the client token in global variable used to compare if
+     * the same token in /update/accepted. */
+    ulClientToken = ( xTaskGetTickCount() % 1000000 );
+    snprintf( pcUpdateReportedDocument,
+              SHADOW_REPORTED_JSON_LENGTH + 1,
+              SHADOW_REPORTED_JSON,
+              ( int ) 0,
+              ( long unsigned ) ulClientToken );
+    LogInfo( ( "Calling PublishToTopic: SHADOW_TOPIC_STRING_UPDATE  %s", pcUpdateReportedDocument ) );
+    xDemoStatus = PublishToTopic( &xMqttContext,
+                                  SHADOW_TOPIC_STRING_UPDATE( THING_NAME ),
+                                  SHADOW_TOPIC_LENGTH_UPDATE( THING_NAME_LENGTH ),
+                                  pcUpdateReportedDocument,
+                                  ( SHADOW_DESIRED_JSON_LENGTH + 1 ) );
+
+    TaskQueueData_t xTaskQueueData;
+
+    LogInfo( ( "Waiting..." ) );
     do{
-        struct TaskQueueData xTaskQueueData;
-        LogInfo( ( "Waiting TaskQueueRecieve" ) );
         xTaskQueueRecieve = xQueueReceive( xTaskQueueHandle,
                                            &xTaskQueueData,
-                                           portMAX_DELAY );
+                                           0 );
         if( xTaskQueueRecieve == pdTRUE ){
             LogInfo( ( "xTaskQueueRecieve = TRUE" ) );
             switch(xTaskQueueData.queueMessageID){
-                case 0:
+                case (uint8_t)TaskQueueMesID_GPIO_ON:
+                    LogInfo( ( "TaskQueueMesID_GPIO_ON" ) );
+                    break;
+                case (uint8_t)TaskQueueMesID_ShadowUpdate:
+                    LogInfo( ( "TaskQueueMesID_ShadowUpdate" ) );
+                    
+                #if 1
+                    /* Report the latest power state back to device shadow. */
+                    LogInfo( ( "Report to the state change: %d", xTaskQueueData.queueMessageData[0] ) );
+                    ( void ) memset( pcUpdateReportedDocument,
+                                     0x00,
+                                     sizeof( pcUpdateReportedDocument ) );
+
+                    /* Keep the client token in global variable used to compare if
+                     * the same token in /update/accepted. */
+                    ulClientToken = ( xTaskGetTickCount() % 1000000 );
+                    snprintf( pcUpdateReportedDocument,
+                              SHADOW_REPORTED_JSON_LENGTH + 1,
+                              SHADOW_REPORTED_JSON,
+                              ( int ) xTaskQueueData.queueMessageData[0],
+                              ( long unsigned ) ulClientToken );
+                    LogInfo( ( "Calling PublishToTopic: SHADOW_TOPIC_STRING_UPDATE  %s", pcUpdateReportedDocument ) );
+                    xDemoStatus = PublishToTopic( &xMqttContext,
+                                                  SHADOW_TOPIC_STRING_UPDATE( THING_NAME ),
+                                                  SHADOW_TOPIC_LENGTH_UPDATE( THING_NAME_LENGTH ),
+                                                  pcUpdateReportedDocument,
+                                                  ( SHADOW_DESIRED_JSON_LENGTH + 1 ) );
+                #endif
                     break;
                 default:
                     break;
             }
         }
+        ProcessLoop(&xMqttContext, 500);/* Published Echo Recieved */
     }while(true);
 
     LogInfo( ( "Start to unsubscribe shadow topics and disconnect from MQTT. \r\n" ) );
