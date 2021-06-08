@@ -81,6 +81,9 @@
 /* Transport interface implementation include header for TLS. */
 #include "transport_secure_sockets.h"
 
+#include "driver/gpio.h"
+#include "hal/gpio_types.h"
+
 /**
  * @brief Format string representing a Shadow document with a "desired" state.
  *
@@ -796,21 +799,33 @@ static void prvEventCallback( MQTTContext_t * pxMqttContext,
 
 void TaskMainChimeGPIO(void* pParam){
     LogInfo( ( "Calling TaskMainChimeGPIO" ) );
-    const TickType_t xDelay = 10000 / portTICK_PERIOD_MS;
+    const TickType_t xDelay = 100 / portTICK_PERIOD_MS;
     TaskQueueData_t data;
+    static int currentPin = 0;
 
     data.queueMessageID = (uint8_t)TaskQueueMesID_GPIO_ON;
 
     for( ;; )
     {
-        LogInfo( ( "Calling pvCoRoutineGPIO" ) );
-        if(xTaskQueueHandle != NULL){
-            xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+        int newPin = gpio_get_level(GPIO_NUM_2);
+        if( ( newPin == 1 ) && ( currentPin != newPin ) ){
+            if(xTaskQueueHandle != NULL){
+                LogInfo( ( "TaskMainChimeGPIO : xQueueSend" ) );
+                xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+            }
         }
+        currentPin = newPin;
         vTaskDelay(xDelay);
     }
 }
 /*-----------------------------------------------------------*/
+#define TOPIC_CHIME_JSON    \
+    "{\n"                         \
+    "  \"chime\": \"%s\"\n"          \
+    "}"
+#define TOPIC_CHIME_JSON_LENGTH    ( sizeof( TOPIC_CHIME_JSON ) - 1 )
+
+#define TOPIC_CHIME "iot/topic/chime"
 
 /**
  * @brief Entry point of shadow demo.
@@ -843,7 +858,7 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
     /* A buffer containing the update document. It has static duration to prevent
      * it from being placed on the call stack. */
     static char pcUpdateReportedDocument[ SHADOW_REPORTED_JSON_LENGTH + 1 ] = { 0 };
-
+    static char pcTopicChimeDocument[ TOPIC_CHIME_JSON_LENGTH + 1 ] = { 0 };
 
     /* Remove compiler warnings about unused parameters. */
     ( void ) awsIotMqttMode;
@@ -925,11 +940,44 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
             switch(xTaskQueueData.queueMessageID){
                 case (uint8_t)TaskQueueMesID_GPIO_ON:
                     LogInfo( ( "TaskQueueMesID_GPIO_ON" ) );
+                    /* Report the latest power state back to device shadow. */
+                    LogInfo( ( "Publish Topic %s ", TOPIC_CHIME ) );
+                    ( void ) memset( pcTopicChimeDocument,
+                                     0x00,
+                                     sizeof( pcTopicChimeDocument ) );
+
+                    /* Keep the client token in global variable used to compare if
+                     * the same token in /update/accepted. */
+                    ulClientToken = ( xTaskGetTickCount() % 1000000 );
+                    snprintf( pcTopicChimeDocument,
+                              TOPIC_CHIME_JSON_LENGTH + 1,
+                              TOPIC_CHIME_JSON,
+                              "ON",
+                              ( long unsigned ) ulClientToken );
+                    LogInfo( ( "Calling PublishToTopic: TOPIC_CHIME  %s", pcTopicChimeDocument ) );
+                    xDemoStatus = PublishToTopic( &xMqttContext,
+                                                  TOPIC_CHIME,
+                                                  sizeof(TOPIC_CHIME) - 1,
+                                                  pcTopicChimeDocument,
+                                                  ( TOPIC_CHIME_JSON_LENGTH ) );
                     break;
                 case (uint8_t)TaskQueueMesID_ShadowUpdate:
                     LogInfo( ( "TaskQueueMesID_ShadowUpdate" ) );
                     
                 #if 1
+                    if( xTaskQueueData.queueMessageData[0] == 0 ){
+                        LogInfo( ("Power OFF!") );
+                        gpio_set_level(GPIO_NUM_0, 0);
+                    }
+                    else if( xTaskQueueData.queueMessageData[0] == 1 ){
+                        LogInfo( ("Power ON!") );
+                        gpio_set_level(GPIO_NUM_0, 1);
+                    }
+                    else{
+                        LogInfo( ("Power OFF!") );
+                        gpio_set_level(GPIO_NUM_0, 0);
+                    }
+
                     /* Report the latest power state back to device shadow. */
                     LogInfo( ( "Report to the state change: %d", xTaskQueueData.queueMessageData[0] ) );
                     ( void ) memset( pcUpdateReportedDocument,
