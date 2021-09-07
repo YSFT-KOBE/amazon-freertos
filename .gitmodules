@@ -110,3 +110,9 @@
 [submodule "vendors/cypress/MTB/libraries/kv-store"]
 	path = vendors/cypress/MTB/libraries/kv-store
 	url = https://github.com/cypresssemiconductorco/kv-store.git
+[submodule "libraries/ota_for_aws"]
+	path = libraries/ota_for_aws
+	url = https://github.com/aws/ota-for-aws-iot-embedded-sdk.git
+[submodule "libraries/abstractions/ota_pal_psa"]
+	path = libraries/abstractions/ota_pal_psa
+	url = https://github.com/Linaro/freertos-ota-pal-psa.git

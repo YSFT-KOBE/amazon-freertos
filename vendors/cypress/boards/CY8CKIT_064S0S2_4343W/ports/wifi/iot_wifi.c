@@ -83,7 +83,6 @@ WIFIDeviceMode_t devMode = eWiFiModeNotSupported;
 bool isConnected = false;
 bool isPoweredUp = false;
 bool isMutexInitialized = false;
-IotNetworkStateChangeEventCallback_t userCb = NULL;
 
 static whd_scan_userdata_t internalScanData;
 static whd_scan_result_t internalScanResult;
@@ -490,6 +489,7 @@ WIFIReturnCode_t WIFI_NetworkGet(WIFINetworkProfile_t *pxNetworkProfile, uint16_
 WIFIReturnCode_t WIFI_NetworkDelete(uint16_t usIndex)
 {
     char wifi_profile_key[WIFI_PROFILE_KEY_SIZE];
+    cy_rslt_t lookupResult = MTB_KVSTORE_ITEM_NOT_FOUND_ERROR;
 
     configASSERT(usIndex < CY_TOTAL_WIFI_PROFILES);
 
@@ -497,12 +497,25 @@ WIFIReturnCode_t WIFI_NetworkDelete(uint16_t usIndex)
 
     if (cy_rtos_get_mutex(&wifiMutex, wificonfigMAX_SEMAPHORE_WAIT_TIME_MS) == CY_RSLT_SUCCESS)
     {
-        if ((mtb_kvstore_read(&kvstore_obj, wifi_profile_key, NULL, NULL) != CY_RSLT_SUCCESS) ||
-            (mtb_kvstore_delete(&kvstore_obj, wifi_profile_key) != CY_RSLT_SUCCESS))
+        lookupResult = mtb_kvstore_read(&kvstore_obj, wifi_profile_key, NULL, NULL);
+
+        /* Reading from the kvstore may result in an item not found error if
+         * deleting a nonexisting network. */
+        if ((lookupResult != CY_RSLT_SUCCESS) && (lookupResult != MTB_KVSTORE_ITEM_NOT_FOUND_ERROR))
         {
             cy_rtos_set_mutex(&wifiMutex);
             return eWiFiFailure;
         }
+        else
+        {
+            /* Deletion is fine even if the key is not found. */
+            if (mtb_kvstore_delete(&kvstore_obj, wifi_profile_key) != CY_RSLT_SUCCESS)
+            {
+                cy_rtos_set_mutex(&wifiMutex);
+                return eWiFiFailure;
+            }
+        }
+
         if (cy_rtos_set_mutex(&wifiMutex) != CY_RSLT_SUCCESS)
         {
             return eWiFiFailure;
@@ -695,12 +708,6 @@ BaseType_t WIFI_IsConnected( const WIFINetworkParams_t * pxNetworkParams )
     }
 
     return xIsConnected;
-}
-
-WIFIReturnCode_t WIFI_RegisterNetworkStateChangeEventCallback( IotNetworkStateChangeEventCallback_t xCallback )
-{
-    userCb = xCallback;
-    return eWiFiSuccess;
 }
 
 WIFIReturnCode_t WIFI_RegisterEvent( WIFIEventType_t xEventType, WIFIEventHandler_t xHandler )

@@ -3,7 +3,7 @@
 if (AFR_ENABLE_UNIT_TESTS)
     add_subdirectory(abstractions/secure_sockets)
     add_subdirectory(abstractions/transport/utest)
-    add_subdirectory(c_sdk/standard/ble)
+    add_subdirectory(ble)
     return()
 endif()
 
@@ -52,7 +52,8 @@ file(GLOB afr_modules_csdk "${AFR_MODULES_DIR}/c_sdk/*/*")
 file(GLOB afr_modules_freertos_plus "${AFR_MODULES_DIR}/freertos_plus/*/*")
 file(GLOB afr_modules_abstractions "${AFR_MODULES_DIR}/abstractions/*")
 file(GLOB afr_modules_logging "${AFR_MODULES_DIR}/logging")
-foreach(module IN LISTS afr_modules_csdk afr_modules_freertos_plus afr_modules_abstractions afr_modules_logging)
+file(GLOB afr_modules_ble "${AFR_MODULES_DIR}/ble")
+foreach(module IN LISTS afr_modules_csdk afr_modules_freertos_plus afr_modules_abstractions afr_modules_logging afr_modules_ble)
     if(IS_DIRECTORY "${module}" AND EXISTS "${module}/CMakeLists.txt")
         afr_add_subdirectory("${module}")
     endif()
@@ -116,4 +117,9 @@ endif()
 # Add backoff algorithm module ONLY if present in FreeRTOS console download.
 if(EXISTS ${AFR_MODULES_DIR}/abstractions/backoff_algorithm.cmake)
   include(${AFR_MODULES_DIR}/abstractions/backoff_algorithm.cmake)
+endif()
+
+# Add OTA module ONLY if present in FreeRTOS console download.
+if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/ota_demo_dependencies.cmake)
+  include(ota_demo_dependencies.cmake)
 endif()

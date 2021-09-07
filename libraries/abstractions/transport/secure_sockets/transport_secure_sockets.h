@@ -1,6 +1,6 @@
 /*
- * FreeRTOS Transport Secure Sockets V1.0.0
- * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ * FreeRTOS Transport Secure Sockets V1.0.1
+ * Copyright (C) 2021 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -135,7 +135,7 @@ typedef struct SocketsConfig
     size_t maxFragmentLength;
 
     const char * pRootCa; /**< @brief String representing a trusted server Root CA certificate. */
-    size_t rootCaSize;    /**< @brief Size associated with #IotNetworkCredentials_t.pRootCa. */
+    size_t rootCaSize;    /**< @brief Size associated with #SocketsConfig_t.pRootCa. */
 } SocketsConfig_t;
 
 

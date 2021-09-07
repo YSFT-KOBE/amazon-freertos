@@ -53,17 +53,6 @@
 /* WiFi driver includes. */
 #include "es_wifi.h"
 
-/* Application version info. */
-#include "aws_application_version.h"
-
-/* Declare the firmware version structure for all to see. */
-const AppVersion32_t xAppFirmwareVersion =
-{
-    .u.x.ucMajor = APP_VERSION_MAJOR,
-    .u.x.ucMinor = APP_VERSION_MINOR,
-    .u.x.usBuild = APP_VERSION_BUILD,
-};
-
 /* The SPI driver polls at a high priority. The logging task's priority must also
  * be high to be not be starved of CPU time. */
 #define mainLOGGING_TASK_PRIORITY                         ( configMAX_PRIORITIES - 1 )
@@ -456,49 +445,7 @@ void Error_Handler( void )
         HAL_Delay( 200 );
     }
 }
-/*-----------------------------------------------------------*/
 
-/**
- * @brief Warn user if pvPortMalloc fails.
- *
- * Called if a call to pvPortMalloc() fails because there is insufficient
- * free memory available in the FreeRTOS heap.  pvPortMalloc() is called
- * internally by FreeRTOS API functions that create tasks, queues, software
- * timers, and semaphores.  The size of the FreeRTOS heap is set by the
- * configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h.
- *
- */
-void vApplicationMallocFailedHook()
-{
-    taskDISABLE_INTERRUPTS();
-
-    for( ; ; )
-    {
-    }
-}
-/*-----------------------------------------------------------*/
-
-/**
- * @brief Loop forever if stack overflow is detected.
- *
- * If configCHECK_FOR_STACK_OVERFLOW is set to 1,
- * this hook provides a location for applications to
- * define a response to a stack overflow.
- *
- * Use this hook to help identify that a stack overflow
- * has occurred.
- *
- */
-void vApplicationStackOverflowHook( TaskHandle_t xTask,
-                                    char * pcTaskName )
-{
-    portDISABLE_INTERRUPTS();
-
-    /* Loop forever */
-    for( ; ; )
-    {
-    }
-}
 /*-----------------------------------------------------------*/
 
 void vApplicationIdleHook( void )
