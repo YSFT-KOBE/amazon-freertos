@@ -213,6 +213,24 @@
  */
 #define SHADOW_DELETE_REJECTED_ERROR_CODE_KEY_LENGTH    ( ( uint16_t ) ( sizeof( SHADOW_DELETE_REJECTED_ERROR_CODE_KEY ) - 1 ) )
 
+#define TOPIC_CHIME_JSON    \
+    "{\n"                         \
+    "  \"chime\": \"%s\"\n"          \
+    "}"
+#define TOPIC_CHIME_JSON_LENGTH    ( sizeof( TOPIC_CHIME_JSON ) - 1 )
+
+#define TOPIC_CHIME "iot/topic/chime"
+
+
+#define TOPIC_RECOG_JSON    \
+    "{\n"                         \
+    "  \"name\": \"%s\",\n"          \
+    "  \"s3url\": \"%s\","          \
+    "}"
+#define TOPIC_RECOG_JSON_LENGTH    ( sizeof( TOPIC_RECOG_JSON ) - 1 )
+
+#define TOPIC_RECOG "iot/topic/recog"
+
 /*-----------------------------------------------------------*/
 
 /**
@@ -293,14 +311,19 @@ static BaseType_t xUpdateAcceptedReturn = pdPASS;
 static BaseType_t xDeleteResponseReceived = pdFALSE;
 
 static QueueHandle_t xTaskQueueHandle = NULL;
-typedef struct  {
+
+#define QUEUE_DATA_LENGTH 100
+typedef struct {
     uint8_t queueMessageID;
-    uint8_t queueMessageData[3];
+    uint8_t queueMessageData[QUEUE_DATA_LENGTH];
 } TaskQueueData_t;
+
 typedef enum {
     TaskQueueMesID_GPIO_ON = 1,
-    TaskQueueMesID_ShadowUpdate= 2
+    TaskQueueMesID_ShadowUpdate= 2,
+    TaskQueueMesID_TOPIC_RECOG= 3
 } TaskQueueMesID_t;
+
 /**
  * @brief Status of the Shadow delete operation.
  *
@@ -710,6 +733,63 @@ static void prvUpdateAcceptedHandler( MQTTPublishInfo_t * pxPublishInfo )
 
 /*-----------------------------------------------------------*/
 
+static void pTopcReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
+{
+    char * pcOutValue = NULL;
+    uint32_t ulOutValueLength = 0U;
+    JSONStatus_t result = JSONSuccess;
+
+    assert( pxPublishInfo != NULL );
+    assert( pxPublishInfo->pPayload != NULL );
+
+    LogInfo( ( "topic:%s, json payload:%s.", ( const char * ) pxPublishInfo->pTopicName, ( const char * ) pxPublishInfo->pPayload ) );
+
+    /* Make sure the payload is a valid json document. */
+    result = JSON_Validate( pxPublishInfo->pPayload,
+                            pxPublishInfo->payloadLength );
+
+    if( result == JSONSuccess )
+    {
+        /* Then we start to get the version value by JSON keyword "version". */
+        result = JSON_Search( ( char * ) pxPublishInfo->pPayload,
+                              pxPublishInfo->payloadLength,
+                              "name",
+                              sizeof( "name" ) - 1,
+                              &pcOutValue,
+                              ( size_t * ) &ulOutValueLength );
+    }
+    else
+    {
+        LogError( ( "The json document is invalid!!" ) );
+    }
+
+    if( result == JSONSuccess )
+    {
+        LogInfo( ( "name: %.*s",
+                   ulOutValueLength,
+                   pcOutValue ) );
+
+        TaskQueueData_t data;
+
+        data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
+
+        if( QUEUE_DATA_LENGTH > ulOutValueLength){
+            strcpy(data.queueMessageData, pcOutValue);
+            data.queueMessageData[ulOutValueLength] = 0x00;
+        } else {
+            strncpy(data.queueMessageData, pcOutValue, QUEUE_DATA_LENGTH - 2);
+            data.queueMessageData[QUEUE_DATA_LENGTH - 1] = 0x00;
+        }
+        xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+    }
+    else
+    {
+        LogError( ( "No name in json document!!" ) );
+    }
+}
+
+/*-----------------------------------------------------------*/
+
 /* This is the callback function invoked by the MQTT stack when it receives
  * incoming messages. This function demonstrates how to use the Shadow_MatchTopic
  * function to determine whether the incoming message is a device shadow message
@@ -785,6 +865,10 @@ static void prvEventCallback( MQTTContext_t * pxMqttContext,
                 LogInfo( ( "Other message type:%d !!", messageType ) );
             }
         }
+        else if( 0 == strncmp(TOPIC_RECOG, pxDeserializedInfo->pPublishInfo->pTopicName, pxDeserializedInfo->pPublishInfo->topicNameLength) ){
+            LogInfo( ( "TOPIC_RECOG" ) );
+            /* pTopcReceiveHandler(pxDeserializedInfo->pPublishInfo); */
+        }
         else
         {
             LogError( ( "Shadow_MatchTopic parse failed:%s !!", ( const char * ) pxDeserializedInfo->pPublishInfo->pTopicName ) );
@@ -819,13 +903,6 @@ void TaskMainChimeGPIO(void* pParam){
     }
 }
 /*-----------------------------------------------------------*/
-#define TOPIC_CHIME_JSON    \
-    "{\n"                         \
-    "  \"chime\": \"%s\"\n"          \
-    "}"
-#define TOPIC_CHIME_JSON_LENGTH    ( sizeof( TOPIC_CHIME_JSON ) - 1 )
-
-#define TOPIC_CHIME "iot/topic/chime"
 
 /**
  * @brief Entry point of shadow demo.
@@ -904,6 +981,15 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
             xDemoStatus = SubscribeToTopic( &xMqttContext,
                                             SHADOW_TOPIC_STRING_UPDATE_REJECTED( THING_NAME ),
                                             SHADOW_TOPIC_LENGTH_UPDATE_REJECTED( THING_NAME_LENGTH ) );
+        }
+
+        if( xDemoStatus == pdPASS )
+        {
+            LogInfo( ( "Calling SubscribeToTopic: TOPIC_RECOG" ) );
+            LogInfo( ( "TOPIC_RECOG size:%d", sizeof( TOPIC_RECOG ) - 1 ) );
+            xDemoStatus = SubscribeToTopic( &xMqttContext,
+                                            TOPIC_RECOG,
+                                            sizeof( TOPIC_RECOG ) - 1 );
         }
     }
 
