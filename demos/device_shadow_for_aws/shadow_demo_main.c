@@ -68,6 +68,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "timers.h"
 
 /* SHADOW API header. */
 #include "shadow.h"
@@ -311,6 +312,7 @@ static BaseType_t xUpdateAcceptedReturn = pdPASS;
 static BaseType_t xDeleteResponseReceived = pdFALSE;
 
 static QueueHandle_t xTaskQueueHandle = NULL;
+static TimerHandle_t xChimeOFFTimerHandle = NULL;
 
 #define QUEUE_DATA_LENGTH 100
 typedef struct {
@@ -733,7 +735,7 @@ static void prvUpdateAcceptedHandler( MQTTPublishInfo_t * pxPublishInfo )
 
 /*-----------------------------------------------------------*/
 
-static void pTopcReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
+static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
 {
     char * pcOutValue = NULL;
     uint32_t ulOutValueLength = 0U;
@@ -742,7 +744,8 @@ static void pTopcReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
     assert( pxPublishInfo != NULL );
     assert( pxPublishInfo->pPayload != NULL );
 
-    LogInfo( ( "topic:%s, json payload:%s.", ( const char * ) pxPublishInfo->pTopicName, ( const char * ) pxPublishInfo->pPayload ) );
+    LogInfo( ( "json payload:%s.", ( const char * ) pxPublishInfo->pPayload ) );
+    LogInfo( ( "json payload Length:%d", pxPublishInfo->payloadLength ) );
 
     /* Make sure the payload is a valid json document. */
     result = JSON_Validate( pxPublishInfo->pPayload,
@@ -750,13 +753,19 @@ static void pTopcReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
 
     if( result == JSONSuccess )
     {
-        /* Then we start to get the version value by JSON keyword "version". */
+        /* Then we start to get the name value by JSON keyword "name". */
+        #if 0
         result = JSON_Search( ( char * ) pxPublishInfo->pPayload,
                               pxPublishInfo->payloadLength,
                               "name",
                               sizeof( "name" ) - 1,
                               &pcOutValue,
                               ( size_t * ) &ulOutValueLength );
+        #else
+            result = JSONSuccess;
+            pcOutValue = "test";
+            ulOutValueLength = 1;
+        #endif
     }
     else
     {
@@ -765,22 +774,17 @@ static void pTopcReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
 
     if( result == JSONSuccess )
     {
-        LogInfo( ( "name: %.*s",
-                   ulOutValueLength,
-                   pcOutValue ) );
+        LogInfo( ( "name: %.*s", ulOutValueLength, pcOutValue ) );
 
+        if( 0 != ulOutValueLength )
+        {
         TaskQueueData_t data;
 
         data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
+            data.queueMessageData[0] = 1;
 
-        if( QUEUE_DATA_LENGTH > ulOutValueLength){
-            strcpy(data.queueMessageData, pcOutValue);
-            data.queueMessageData[ulOutValueLength] = 0x00;
-        } else {
-            strncpy(data.queueMessageData, pcOutValue, QUEUE_DATA_LENGTH - 2);
-            data.queueMessageData[QUEUE_DATA_LENGTH - 1] = 0x00;
-        }
         xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+        }
     }
     else
     {
@@ -867,7 +871,9 @@ static void prvEventCallback( MQTTContext_t * pxMqttContext,
         }
         else if( 0 == strncmp(TOPIC_RECOG, pxDeserializedInfo->pPublishInfo->pTopicName, pxDeserializedInfo->pPublishInfo->topicNameLength) ){
             LogInfo( ( "TOPIC_RECOG" ) );
-            /* pTopcReceiveHandler(pxDeserializedInfo->pPublishInfo); */
+            LogInfo( ( "Calling pTopcReceiveHandler : %s", pxDeserializedInfo->pPublishInfo->pPayload ) );
+            printf("printf");
+            pTopicReceiveHandler(pxDeserializedInfo->pPublishInfo);
         }
         else
         {
@@ -902,6 +908,31 @@ void TaskMainChimeGPIO(void* pParam){
         vTaskDelay(xDelay);
     }
 }
+
+/*-----------------------------------------------------------*/
+
+void vTimer_TopicRECOG_Callback( TimerHandle_t xTimer )
+{
+    uint32_t ulCount;
+
+    LogInfo( ( "Calling vTimer_TopicRECOG_Callback" ) );
+
+    /* The number of times this timer has expired is saved as the
+    timer's ID.  Obtain the count. */
+    ulCount = ( uint32_t ) pvTimerGetTimerID( xTimer );
+
+    /* Do not use a block time if calling a timer API function
+    from a timer callback function, as doing so could cause a
+    deadlock! */
+    xTimerStop( xTimer, 0 );
+    
+    TaskQueueData_t data;
+    data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
+    data.queueMessageData[0] = 0;
+
+    xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+}
+
 /*-----------------------------------------------------------*/
 
 /**
@@ -946,6 +977,13 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
 
     /* Create Task Queue */
     xTaskQueueHandle = xQueueCreate( 10, sizeof(TaskQueueData_t));
+
+    /* Create Timer */
+    xChimeOFFTimerHandle = xTimerCreate("Chime OFF Timer",
+                                        pdMS_TO_TICKS( 1000 ),
+                                        pdFALSE,
+                                        (void *)0,
+                                        vTimer_TopicRECOG_Callback);
 
     LogInfo( ( "Calling EstablishMqttSession" ) );
     xDemoStatus = EstablishMqttSession( &xMqttContext,
@@ -1047,15 +1085,27 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
                                                   pcTopicChimeDocument,
                                                   ( TOPIC_CHIME_JSON_LENGTH ) );
                     break;
+
+                case (uint8_t)TaskQueueMesID_TOPIC_RECOG:
+                    LogInfo( ( "TaskQueueMesID_TOPIC_RECOG" ) );
+                    if( xTaskQueueData.queueMessageData[0] == 1 ){
+                        LogInfo( ("Chime ON!") );
+                        if( xTimerStart(xChimeOFFTimerHandle, 0) == pdPASS ){
+                            LogInfo( ("Chime OFF Timer Started.") );
+                            gpio_set_level(GPIO_NUM_4, 1);
+                        }
+                    }
+                    else {
+                        LogInfo( ("Chime OFF!") );
+                        gpio_set_level(GPIO_NUM_4, 0);
+                    }
+                    break;
+
                 case (uint8_t)TaskQueueMesID_ShadowUpdate:
                     LogInfo( ( "TaskQueueMesID_ShadowUpdate" ) );
                     
                 #if 1
-                    if( xTaskQueueData.queueMessageData[0] == 0 ){
-                        LogInfo( ("Power OFF!") );
-                        gpio_set_level(GPIO_NUM_0, 0);
-                    }
-                    else if( xTaskQueueData.queueMessageData[0] == 1 ){
+                    if( xTaskQueueData.queueMessageData[0] == 1 ){
                         LogInfo( ("Power ON!") );
                         gpio_set_level(GPIO_NUM_0, 1);
                     }

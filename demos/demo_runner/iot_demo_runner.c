@@ -108,8 +108,18 @@ void DEMO_RUNNER_RunDemos( void )
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .pull_up_en = GPIO_PULLUP_DISABLE
     };
+
+    gpio_config_t gpioP4Config ={
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_DEF_OUTPUT,
+        .pin_bit_mask = 0x0000000000000010,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE
+    };
+
     gpio_config(&gpioP0Config);
     gpio_config(&gpioP2Config);
+    gpio_config(&gpioP4Config);
 
     Iot_CreateDetachedThread( runDemoTask,
                               &mqttDemoContext,
