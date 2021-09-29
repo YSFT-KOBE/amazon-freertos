@@ -734,6 +734,7 @@ static void prvUpdateAcceptedHandler( MQTTPublishInfo_t * pxPublishInfo )
 }
 
 /*-----------------------------------------------------------*/
+static char copiedPayLoad[500+1];
 
 static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
 {
@@ -747,15 +748,24 @@ static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
     LogInfo( ( "json payload:%s.", ( const char * ) pxPublishInfo->pPayload ) );
     LogInfo( ( "json payload Length:%d", pxPublishInfo->payloadLength ) );
 
+
+    if( pxPublishInfo->payloadLength < 500 ) {
+        strncpy( copiedPayLoad, ( const char * )pxPublishInfo->pPayload, pxPublishInfo->payloadLength );
+        copiedPayLoad[pxPublishInfo->payloadLength + 1] = 0;
+    } else {
+        LogError( ( "The json document is too long!!" ) );
+        return;
+    }
+
     /* Make sure the payload is a valid json document. */
-    result = JSON_Validate( pxPublishInfo->pPayload,
+    result = JSON_Validate( ( const char * )copiedPayLoad,
                             pxPublishInfo->payloadLength );
 
     if( result == JSONSuccess )
     {
         /* Then we start to get the name value by JSON keyword "name". */
-        #if 0
-        result = JSON_Search( ( char * ) pxPublishInfo->pPayload,
+        #if 1
+        result = JSON_Search( ( char * ) copiedPayLoad,
                               pxPublishInfo->payloadLength,
                               "name",
                               sizeof( "name" ) - 1,
@@ -778,12 +788,12 @@ static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
 
         if( 0 != ulOutValueLength )
         {
-        TaskQueueData_t data;
+            TaskQueueData_t data;
 
-        data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
+            data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
             data.queueMessageData[0] = 1;
 
-        xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+            xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
         }
     }
     else
