@@ -1076,16 +1076,13 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
             LogInfo( ( "xTaskQueueRecieve = TRUE" ) );
             switch(xTaskQueueData.queueMessageID){
                 case (uint8_t)TaskQueueMesID_Chime_Button:
-                    LogInfo( ( "TaskQueueMesID_Chime_Button ON" ) );
-                    /* Report the latest power state back to device shadow. */
                     if( xTaskQueueData.queueMessageData[0] == 1 ){
+                    LogInfo( ( "TaskQueueMesID_Chime_Button ON" ) );
                     LogInfo( ( "Publish Topic %s ", TOPIC_CHIME ) );
                     ( void ) memset( pcTopicChimeDocument,
                                      0x00,
                                      sizeof( pcTopicChimeDocument ) );
 
-                    /* Keep the client token in global variable used to compare if
-                     * the same token in /update/accepted. */
                     ulClientToken = ( xTaskGetTickCount() % 1000000 );
                     snprintf( pcTopicChimeDocument,
                               TOPIC_CHIME_JSON_LENGTH + 1,
@@ -1104,14 +1101,14 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
                 case (uint8_t)TaskQueueMesID_Chime_Ringing:
                     LogInfo( ( "TaskQueueMesID_Chime_Ringing" ) );
                     if( xTaskQueueData.queueMessageData[0] == 1 ){
-                        LogInfo( ("Chime ON!") );
+                        LogInfo( ("Chime Ringing ON!") );
                         if( xTimerStart(xChimeOFFTimerHandle, 0) == pdPASS ){
-                            LogInfo( ("Chime OFF Timer Started.") );
+                            LogInfo( ("Chime Ringing OFF Timer Started.") );
                             gpio_set_level(GPIO_NUM_4, 1);
                         }
                     }
                     else {
-                        LogInfo( ("Chime OFF!") );
+                        LogInfo( ("Chime Ringing OFF!") );
                         gpio_set_level(GPIO_NUM_4, 0);
                     }
                     break;
