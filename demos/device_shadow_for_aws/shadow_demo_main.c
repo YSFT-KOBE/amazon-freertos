@@ -321,9 +321,9 @@ typedef struct {
 } TaskQueueData_t;
 
 typedef enum {
-    TaskQueueMesID_GPIO_ON = 1,
-    TaskQueueMesID_ShadowUpdate= 2,
-    TaskQueueMesID_TOPIC_RECOG= 3
+    TaskQueueMesID_Chime_Button = 1,
+    TaskQueueMesID_ShadowUpdate = 2,
+    TaskQueueMesID_Chime_Ringing = 3
 } TaskQueueMesID_t;
 
 /**
@@ -790,7 +790,7 @@ static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
         {
             TaskQueueData_t data;
 
-            data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
+            data.queueMessageID = (uint8_t)TaskQueueMesID_Chime_Ringing;
             data.queueMessageData[0] = 1;
 
             xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
@@ -903,15 +903,18 @@ void TaskMainChimeGPIO(void* pParam){
     TaskQueueData_t data;
     static int currentPin = 0;
 
-    data.queueMessageID = (uint8_t)TaskQueueMesID_GPIO_ON;
+    data.queueMessageID = (uint8_t)TaskQueueMesID_Chime_Button;
 
     for( ;; )
     {
         int newPin = gpio_get_level(GPIO_NUM_2);
-        if( ( newPin == 1 ) && ( currentPin != newPin ) ){
+        if( currentPin != newPin ){
+            if( newPin == 1 ){
             if(xTaskQueueHandle != NULL){
-                LogInfo( ( "TaskMainChimeGPIO : xQueueSend" ) );
+                    LogInfo( ( "TaskQueueMesID_Chime_Button ON : xQueueSend" ) );
+                    data.queueMessageData[0] = 1;
                 xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+                }
             }
         }
         currentPin = newPin;
@@ -921,11 +924,11 @@ void TaskMainChimeGPIO(void* pParam){
 
 /*-----------------------------------------------------------*/
 
-void vTimer_TopicRECOG_Callback( TimerHandle_t xTimer )
+void vTimer_ChimeRinging_Callback( TimerHandle_t xTimer )
 {
     uint32_t ulCount;
 
-    LogInfo( ( "Calling vTimer_TopicRECOG_Callback" ) );
+    LogInfo( ( "Calling vTimer_ChimeRinging_Callback" ) );
 
     /* The number of times this timer has expired is saved as the
     timer's ID.  Obtain the count. */
@@ -937,7 +940,7 @@ void vTimer_TopicRECOG_Callback( TimerHandle_t xTimer )
     xTimerStop( xTimer, 0 );
     
     TaskQueueData_t data;
-    data.queueMessageID = (uint8_t)TaskQueueMesID_TOPIC_RECOG;
+    data.queueMessageID = (uint8_t)TaskQueueMesID_Chime_Ringing;
     data.queueMessageData[0] = 0;
 
     xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
@@ -993,7 +996,7 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
                                         pdMS_TO_TICKS( 1000 ),
                                         pdFALSE,
                                         (void *)0,
-                                        vTimer_TopicRECOG_Callback);
+                                        vTimer_ChimeRinging_Callback);
 
     LogInfo( ( "Calling EstablishMqttSession" ) );
     xDemoStatus = EstablishMqttSession( &xMqttContext,
@@ -1072,9 +1075,10 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
         if( xTaskQueueRecieve == pdTRUE ){
             LogInfo( ( "xTaskQueueRecieve = TRUE" ) );
             switch(xTaskQueueData.queueMessageID){
-                case (uint8_t)TaskQueueMesID_GPIO_ON:
-                    LogInfo( ( "TaskQueueMesID_GPIO_ON" ) );
+                case (uint8_t)TaskQueueMesID_Chime_Button:
+                    LogInfo( ( "TaskQueueMesID_Chime_Button ON" ) );
                     /* Report the latest power state back to device shadow. */
+                    if( xTaskQueueData.queueMessageData[0] == 1 ){
                     LogInfo( ( "Publish Topic %s ", TOPIC_CHIME ) );
                     ( void ) memset( pcTopicChimeDocument,
                                      0x00,
@@ -1094,10 +1098,11 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
                                                   sizeof(TOPIC_CHIME) - 1,
                                                   pcTopicChimeDocument,
                                                   ( TOPIC_CHIME_JSON_LENGTH ) );
+                    }
                     break;
 
-                case (uint8_t)TaskQueueMesID_TOPIC_RECOG:
-                    LogInfo( ( "TaskQueueMesID_TOPIC_RECOG" ) );
+                case (uint8_t)TaskQueueMesID_Chime_Ringing:
+                    LogInfo( ( "TaskQueueMesID_Chime_Ringing" ) );
                     if( xTaskQueueData.queueMessageData[0] == 1 ){
                         LogInfo( ("Chime ON!") );
                         if( xTimerStart(xChimeOFFTimerHandle, 0) == pdPASS ){
