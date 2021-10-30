@@ -101,10 +101,10 @@ void DEMO_RUNNER_RunDemos( void )
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .pull_up_en = GPIO_PULLUP_DISABLE
     };
-    gpio_config_t gpioP0Config ={
+    gpio_config_t gpioP5Config ={
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_DEF_OUTPUT,
-        .pin_bit_mask = 0x0000000000000001,
+        .pin_bit_mask = 0x0000000000000020,
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .pull_up_en = GPIO_PULLUP_DISABLE
     };
@@ -117,7 +117,7 @@ void DEMO_RUNNER_RunDemos( void )
         .pull_up_en = GPIO_PULLUP_DISABLE
     };
 
-    gpio_config(&gpioP0Config);
+    gpio_config(&gpioP5Config);
     gpio_config(&gpioP2Config);
     gpio_config(&gpioP4Config);
 

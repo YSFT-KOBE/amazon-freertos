@@ -1119,11 +1119,11 @@ int RunDeviceShadowDemo( bool awsIotMqttMode,
                 #if 1
                     if( xTaskQueueData.queueMessageData[0] == 1 ){
                         LogInfo( ("Power ON!") );
-                        gpio_set_level(GPIO_NUM_0, 1);
+                        gpio_set_level(GPIO_NUM_5, 1);
                     }
                     else{
                         LogInfo( ("Power OFF!") );
-                        gpio_set_level(GPIO_NUM_0, 0);
+                        gpio_set_level(GPIO_NUM_5, 0);
                     }
 
                     /* Report the latest power state back to device shadow. */
