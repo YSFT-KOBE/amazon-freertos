@@ -786,6 +786,7 @@ static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
     {
         LogInfo( ( "name: %.*s", ulOutValueLength, pcOutValue ) );
 
+#if 0
         if( 0 != ulOutValueLength )
         {
             TaskQueueData_t data;
@@ -795,6 +796,7 @@ static void pTopicReceiveHandler(MQTTPublishInfo_t * pxPublishInfo)
 
             xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
         }
+#endif
     }
     else
     {
@@ -903,17 +905,23 @@ void TaskMainChimeGPIO(void* pParam){
     TaskQueueData_t data;
     static int currentPin = 0;
 
-    data.queueMessageID = (uint8_t)TaskQueueMesID_Chime_Button;
-
     for( ;; )
     {
         int newPin = gpio_get_level(GPIO_NUM_2);
         if( currentPin != newPin ){
             if( newPin == 1 ){
-            if(xTaskQueueHandle != NULL){
+                if(xTaskQueueHandle != NULL){
                     LogInfo( ( "TaskQueueMesID_Chime_Button ON : xQueueSend" ) );
+
+                    data.queueMessageID = (uint8_t)TaskQueueMesID_Chime_Button;
                     data.queueMessageData[0] = 1;
-                xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+                    xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
+
+                    vTaskDelay(300 / portTICK_PERIOD_MS);
+
+                    data.queueMessageID = (uint8_t)TaskQueueMesID_Chime_Ringing;
+                    data.queueMessageData[0] = 1;
+                    xQueueSend(xTaskQueueHandle, (void*)&data, (TickType_t)0);
                 }
             }
         }
